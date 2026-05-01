@@ -5,6 +5,8 @@
 import polars as pl
 import numpy as np
 from datetime import datetime
+from pathlib import Path
+from contextlib import contextmanager
 import ncas_amof_netcdf_template as nant
 import datetime as dt
 import re
@@ -20,6 +22,45 @@ except ImportError:
 
 DATE_REGEX = r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{6}"
 d = re.compile(DATE_REGEX)
+
+
+@contextmanager
+def _nant_local_files():
+    """Context manager that patches nant's _check_website_exists so it can load
+    TSV files from the local amf_cvs/ directory without needing internet access.
+    Yields (use_local_files, tag) for passing to make_product_netcdf, or
+    (None, 'latest') if no local files are present."""
+    _amf_cvs_root = Path(__file__).parent / "amf_cvs"
+    _versions_file = _amf_cvs_root / "versions.txt"
+
+    if not _versions_file.exists():
+        print("[WARNING] amf_cvs/versions.txt not found - using GitHub lookup (requires internet).")
+        yield None, "latest"
+        return
+
+    _versions = dict(
+        line.split("=", 1)
+        for line in _versions_file.read_text().splitlines()
+        if "=" in line
+    )
+    _tag = _versions.get("amf_cvs_tag", "latest")
+    _use_local = str(_amf_cvs_root)
+
+    # nant calls requests.get() on local file paths, which fails.
+    # Patch _check_website_exists to use os.path.isfile for non-HTTP paths.
+    from ncas_amof_netcdf_template.file_info import FileInfo
+    _orig = FileInfo._check_website_exists
+
+    def _patched(self, url):
+        if not url.startswith("http"):
+            return os.path.isfile(url)
+        return _orig(self, url)
+
+    FileInfo._check_website_exists = _patched
+    try:
+        yield _use_local, _tag
+    finally:
+        FileInfo._check_website_exists = _orig
 
 
 def preprocess_data(infile):
@@ -145,13 +186,26 @@ def process_file(infile, outdir="./", metadata_file="metadata.json"):
     product_version = metadata.get('product_version', 'v1.0').lstrip('v')
 
     # Create NetCDF file
-    nc = nant.create_netcdf.make_product_netcdf("surface-met", "ncas-pressure-1", date=file_date,
-                                 dimension_lengths={"time": len(unix_times)},
-                                 file_location=outdir, platform="cao",
-                                 product_version=product_version)
+    with _nant_local_files() as (_use_local, _tag):
+        nc = nant.create_netcdf.make_product_netcdf("surface-met", "ncas-pressure-1", date=file_date,
+                                     dimension_lengths={"time": len(unix_times)},
+                                     file_location=outdir, platform="cao",
+                                     product_version=product_version,
+                                     use_local_files=_use_local,
+                                     tag=_tag)
     if isinstance(nc, list):
         print("[WARNING] Unexpectedly got multiple netCDFs returned from nant.create_netcdf.main, just using first file...")
         nc = nc[0]
+
+    # Guard against nant GitHub lookup failure (e.g. no internet on SLURM nodes):
+    # make_product_netcdf creates an empty file if it cannot fetch the variable schema.
+    if "time" not in nc.dimensions:
+        file_name = nc.filepath()
+        nc.close()
+        raise RuntimeError(
+            f"make_product_netcdf returned an empty NetCDF (no 'time' dimension) for {infile}. "
+            "This usually means the nant GitHub lookup failed (no internet on compute node)."
+        )
 
     # Add time variable data to NetCDF file
     nant.util.update_variable(nc, "time", unix_times)
@@ -220,9 +274,14 @@ def process_file(infile, outdir="./", metadata_file="metadata.json"):
             nc.variables["time"].setncattr("valid_max", float(max(corrected_time_values)))
 
     # Close file, remove empty variables
+    # Wrapped in try/except: remove_empty_variables fetches variable schema from GitHub
+    # and will fail gracefully if the SLURM node has no internet access.
     file_name = nc.filepath()
     nc.close()
-    nant.remove_empty_variables.main(file_name)
+    try:
+        nant.remove_empty_variables.main(file_name)
+    except Exception as e:
+        print(f"[WARNING] remove_empty_variables failed (GitHub lookup may be unavailable): {e}")
 
 
 def main():

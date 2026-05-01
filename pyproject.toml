@@ -59,7 +59,7 @@ apply-ptb110-bad-data-indices = "chilbolton_pressure_utils.apply_bad_data_indice
 packages = ["chilbolton_pressure_utils"]
 
 [tool.setuptools.package-data]
-chilbolton_pressure_utils = ["*.json", "*.chdb", "*.sh"]
+chilbolton_pressure_utils = ["*.json", "*.chdb", "*.sh", "amf_cvs/**/*.tsv", "amf_cvs/*.txt"]
 
 [tool.black]
 line-length = 100

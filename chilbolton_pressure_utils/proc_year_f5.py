@@ -44,9 +44,10 @@ data from legacy Format5 binary files to CF-compliant NetCDF files."""
     while current_date <= end_date:
         date_str = current_date.strftime("%Y%m%d")
         date_str_short = current_date.strftime("%y%m%d")
+        year_month = current_date.strftime("%Y%m")
 
         # Create output directory
-        outdir = Path(args.output_base) / str(args.year)
+        outdir = Path(args.output_base) / str(args.year) / year_month
         outdir.mkdir(parents=True, exist_ok=True)
 
         # Construct input file path (Format5 uses YYMMDD format)

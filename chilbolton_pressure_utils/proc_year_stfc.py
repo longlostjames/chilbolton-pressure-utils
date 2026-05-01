@@ -47,7 +47,7 @@ CF-compliant NetCDF files."""
         date_str = current_date.strftime("%Y%m%d")
 
         # Create output directory
-        outdir = Path(args.output_base) / str(args.year)
+        outdir = Path(args.output_base) / str(args.year) / year_month
         outdir.mkdir(parents=True, exist_ok=True)
 
         # Construct input file path

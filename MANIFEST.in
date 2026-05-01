@@ -7,6 +7,7 @@ recursive-include chilbolton_pressure_utils *.py
 recursive-include chilbolton_pressure_utils *.json
 recursive-include chilbolton_pressure_utils *.chdb
 recursive-include chilbolton_pressure_utils *.sh
+recursive-include chilbolton_pressure_utils/amf_cvs *.tsv *.txt
 
 recursive-include docs *.rst
 recursive-include docs *.py

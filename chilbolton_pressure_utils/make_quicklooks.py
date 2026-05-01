@@ -129,12 +129,13 @@ def main():
 
     for nc_file in nc_files:
         try:
-            ds = xr.open_dataset(nc_file)
+            ds = xr.open_dataset(nc_file, decode_times=False)
+            if 'time' not in ds:
+                print(f"Skipping {nc_file.name}: no 'time' variable")
+                continue
+            ds = xr.decode_cf(ds)
             ds = ds.sortby('time')
-            if 'time' in ds:
-                plot_day(ds, nc_file.name, output_dir)
-            else:
-                print(f"{nc_file.name}: no 'time' variable")
+            plot_day(ds, nc_file.name, output_dir)
         except Exception as e:
             print(f"Failed to process {nc_file.name}: {e}")
 
