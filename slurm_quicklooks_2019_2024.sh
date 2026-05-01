@@ -5,13 +5,15 @@
 #SBATCH --qos=standard
 #SBATCH --time=4:00:00
 #SBATCH --mem=8G
-#SBATCH --array=2024-2025
+#SBATCH --array=2019-2024
 #SBATCH --output=logs/ptb110_qlooks_%A_%a.out
 #SBATCH --error=logs/ptb110_qlooks_%A_%a.err
 
 YEAR=${SLURM_ARRAY_TASK_ID}
 
-source activate cao_3_11
+# Load conda environment
+source /home/users/cjwalden/miniforge3/etc/profile.d/conda.sh
+conda activate cao_3_11
 
 INPUT_DIR=/gws/pw/j07/ncas_obs_vol2/cao/processing/ncas-pressure-1/data/long-term/level1a/
 OUTPUT_DIR=/gws/pw/j07/ncas_obs_vol2/cao/processing/ncas-pressure-1/data/long-term/level1a/quicklooks/

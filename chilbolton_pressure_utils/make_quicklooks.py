@@ -57,10 +57,11 @@ def plot_day(ds, nc_filename, outdir):
     ax.plot(time, ds['air_pressure'], color='steelblue', label='Air pressure')
 
     # Shade bad data regions (flag=2)
-    bad_intervals = get_flag_intervals(ds['qc_flag_air_pressure'], ds['time'], flag_value=2)
-    for i, (start, end) in enumerate(bad_intervals):
-        label = "Bad data (flag=2)" if i == 0 else None
-        ax.axvspan(start, end, color='grey', alpha=0.4, label=label)
+    if 'qc_flag_air_pressure' in ds:
+        bad_intervals = get_flag_intervals(ds['qc_flag_air_pressure'], ds['time'], flag_value=2)
+        for i, (start, end) in enumerate(bad_intervals):
+            label = "Bad data (flag=2)" if i == 0 else None
+            ax.axvspan(start, end, color='grey', alpha=0.4, label=label)
 
     ax.set_ylabel('Air pressure (hPa)')
     ax.set_xlabel('Time (UTC)')

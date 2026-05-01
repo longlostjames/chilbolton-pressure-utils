@@ -5,13 +5,15 @@
 #SBATCH --qos=standard
 #SBATCH --time=24:00:00
 #SBATCH --mem=16G
-#SBATCH --array=2020-2024
+#SBATCH --array=2019-2024
 #SBATCH --output=logs/ptb110_main_%A_%a.out
 #SBATCH --error=logs/ptb110_main_%A_%a.err
 
 YEAR=${SLURM_ARRAY_TASK_ID}
 
-source activate cao_3_11
+# Load conda environment
+source /home/users/cjwalden/miniforge3/etc/profile.d/conda.sh
+conda activate cao_3_11
 
 echo "Python version: $(python --version)"
 echo "chilbolton-pressure-utils version: $(python -c 'import chilbolton_pressure_utils; print(chilbolton_pressure_utils.__version__)')"
