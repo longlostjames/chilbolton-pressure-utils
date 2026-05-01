@@ -7,6 +7,7 @@ import xarray as xr
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import os
 import argparse
 
@@ -53,29 +54,34 @@ def plot_day(ds, nc_filename, outdir):
     time = ds['time'].values
 
     fig, ax = plt.subplots(figsize=(14, 5))
+    try:
+        ax.plot(time, ds['air_pressure'], color='steelblue', label='Air pressure')
 
-    ax.plot(time, ds['air_pressure'], color='steelblue', label='Air pressure')
+        # Shade bad data regions (flag=2)
+        if 'qc_flag_air_pressure' in ds:
+            bad_intervals = get_flag_intervals(ds['qc_flag_air_pressure'], ds['time'], flag_value=2)
+            for i, (start, end) in enumerate(bad_intervals):
+                label = "Bad data (flag=2)" if i == 0 else None
+                ax.axvspan(start, end, color='grey', alpha=0.4, label=label)
 
-    # Shade bad data regions (flag=2)
-    if 'qc_flag_air_pressure' in ds:
-        bad_intervals = get_flag_intervals(ds['qc_flag_air_pressure'], ds['time'], flag_value=2)
-        for i, (start, end) in enumerate(bad_intervals):
-            label = "Bad data (flag=2)" if i == 0 else None
-            ax.axvspan(start, end, color='grey', alpha=0.4, label=label)
+        ax.set_ylabel('Air pressure (hPa)')
+        ax.set_xlabel('Time (UTC)')
+        ax.set_title(f'Air pressure from Vaisala PTB110 sensor at Chilbolton Observatory — {date_label}')
+        ax.legend()
+        ax.grid(True)
+        ax.set_xlim(day_start, day_end)
+        ax.xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 3)))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
 
-    ax.set_ylabel('Air pressure (hPa)')
-    ax.set_xlabel('Time (UTC)')
-    ax.set_title(f'Barometric pressure with QC flags — {date_label}')
-    ax.legend()
-    ax.grid(True)
-    ax.set_xlim(day_start, day_end)
+        # Fixed margins so axes are the same size across all daily plots.
+        # Left margin sized for a 6-digit y-tick label (e.g. 1013.4).
+        fig.subplots_adjust(left=0.08, right=0.98, top=0.92, bottom=0.12)
 
-    plt.tight_layout()
-
-    outfile = os.path.join(outdir, f"{nc_filename.replace('.nc', '.png')}")
-    plt.savefig(outfile, dpi=200)
-    plt.close()
-    print(f"Saved {outfile}")
+        outfile = os.path.join(outdir, f"{nc_filename.replace('.nc', '.png')}")
+        plt.savefig(outfile, dpi=200)
+        print(f"Saved {outfile}")
+    finally:
+        plt.close(fig)
 
 
 def main():

@@ -5,7 +5,7 @@
 #SBATCH --qos=standard
 #SBATCH --time=4:00:00
 #SBATCH --mem=8G
-#SBATCH --array=2019-2024
+#SBATCH --array=2019-2026
 #SBATCH --output=logs/ptb110_qlooks_%A_%a.out
 #SBATCH --error=logs/ptb110_qlooks_%A_%a.err
 
