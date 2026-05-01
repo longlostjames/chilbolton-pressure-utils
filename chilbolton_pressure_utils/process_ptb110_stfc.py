@@ -36,12 +36,15 @@ def preprocess_data(infile):
     # Step 3: Skip metadata lines (first 4 lines are metadata)
     data_lines = data[4:]
 
-    # Step 4: Process the data
+    # Step 4: Process the data, skipping rows with wrong field count
+    # (e.g. embedded header rows from a different logger program version)
+    expected_ncols = len(column_names)
     processed_data = []
     for line in data_lines:
         if line.strip():
             fields = line.strip().split(",")
-            processed_data.append(fields)
+            if len(fields) == expected_ncols:
+                processed_data.append(fields)
 
     # Step 5: Create a Polars DataFrame with the parsed column names
     df = pl.DataFrame(processed_data, schema=column_names, orient="row")
@@ -60,13 +63,17 @@ def preprocess_data(infile):
                 pl.col(column).str.strip_chars('"').alias(column)
             )
 
-    # Step 8: Replace invalid values (e.g., "NAN") with null
+    # Step 8: Replace invalid values (e.g., "NAN", embedded header rows) with null
     for column in ["BP_mbar_Avg"]:
         if column in df.columns:
             df = df.with_columns(
-                pl.when(pl.col(column) == "NAN")
-                .then(None)
-                .otherwise(pl.col(column))
+                pl.when(
+                    pl.col(column).str.contains(
+                        r'^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$'
+                    )
+                )
+                .then(pl.col(column))
+                .otherwise(None)
                 .alias(column)
             )
 
@@ -85,10 +92,11 @@ def preprocess_data(infile):
                     )
                 )
             else:
-                df = df.with_columns(pl.col(column).cast(dtype))
+                df = df.with_columns(pl.col(column).cast(dtype, strict=False))
 
-    # Step 10: Keep only the required columns
-    df = df.select(["TIMESTAMP", "BP_mbar_Avg"])
+    # Step 10: Keep only the required columns and drop rows with null TIMESTAMP
+    # (embedded header rows that passed column-count check produce null timestamps)
+    df = df.select(["TIMESTAMP", "BP_mbar_Avg"]).filter(pl.col("TIMESTAMP").is_not_null())
 
     # No scale factors needed: BP_mbar_Avg is already in hPa (mbar)
 
