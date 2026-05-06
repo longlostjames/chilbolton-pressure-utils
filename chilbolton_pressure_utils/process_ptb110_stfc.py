@@ -23,19 +23,62 @@ DATE_REGEX = r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{6}"
 d = re.compile(DATE_REGEX)
 
 
+def _download_amf_cvs(amf_cvs_root):
+    """Download AMF_CVs and instrument vocab TSV files from GitHub for offline use."""
+    import requests as _requests
+    print("[INFO] Downloading AMF_CVs files from GitHub for offline use...")
+
+    amf_tag = nant.values.get_latest_CVs_version()
+    inst_tag = nant.values.get_latest_instrument_CVs_version()
+
+    tsv_dir = amf_cvs_root / amf_tag / "product-definitions" / "tsv"
+    amf_base = f"https://raw.githubusercontent.com/ncasuk/AMF_CVs/{amf_tag}/product-definitions/tsv"
+    inst_base = f"https://raw.githubusercontent.com/ncasuk/ncas-data-instrument-vocabs/{inst_tag}/product-definitions/tsv"
+
+    files = [
+        (amf_base, "_common/global-attributes.tsv"),
+        (amf_base, "_common/variables-land.tsv"),
+        (amf_base, "_common/dimensions-land.tsv"),
+        (amf_base, "_vocabularies/data-products.tsv"),
+        (amf_base, "_vocabularies/file-naming.tsv"),
+        (amf_base, "_vocabularies/creators.tsv"),
+        (amf_base, "surface-met/variables-specific.tsv"),
+        (amf_base, "surface-met/dimensions-specific.tsv"),
+        (inst_base, "_instrument_vocabs/ncas-instrument-name-and-descriptors.tsv"),
+        (inst_base, "_instrument_vocabs/community-instrument-name-and-descriptors.tsv"),
+    ]
+
+    for base_url, rel_path in files:
+        dest = tsv_dir / rel_path
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        url = f"{base_url}/{rel_path}"
+        resp = _requests.get(url, timeout=30)
+        resp.raise_for_status()
+        dest.write_text(resp.text)
+        print(f"[INFO]   Downloaded {rel_path}")
+
+    versions_file = amf_cvs_root / "versions.txt"
+    versions_file.write_text(f"amf_cvs_tag={amf_tag}\ninstrument_cvs_tag={inst_tag}\n")
+    print(f"[INFO] AMF_CVs downloaded (AMF: {amf_tag}, instruments: {inst_tag})")
+
+
 @contextmanager
 def _nant_local_files():
     """Context manager that patches nant's _check_website_exists so it can load
     TSV files from the local amf_cvs/ directory without needing internet access.
-    Yields (use_local_files, tag) for passing to make_product_netcdf, or
-    (None, 'latest') if no local files are present."""
+    If the local files are absent, downloads them from GitHub first.
+    Yields (use_local_files, tag) for passing to make_product_netcdf."""
     _amf_cvs_root = Path(__file__).parent / "amf_cvs"
     _versions_file = _amf_cvs_root / "versions.txt"
 
     if not _versions_file.exists():
-        print("[WARNING] amf_cvs/versions.txt not found - using GitHub lookup (requires internet).")
-        yield None, "latest"
-        return
+        print("[INFO] amf_cvs/versions.txt not found - downloading from GitHub...")
+        try:
+            _download_amf_cvs(_amf_cvs_root)
+        except Exception as _e:
+            print(f"[WARNING] Failed to download AMF_CVs ({_e}) - falling back to live GitHub lookup.")
+            yield None, "latest"
+            return
 
     _versions = dict(
         line.split("=", 1)

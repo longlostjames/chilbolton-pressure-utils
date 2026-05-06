@@ -7,6 +7,8 @@ import numpy as np
 import ncas_amof_netcdf_template as nant
 import datetime as dt
 from datetime import datetime
+from pathlib import Path
+from contextlib import contextmanager
 import cftime
 from datetime import timezone
 
@@ -24,6 +26,88 @@ except ImportError:
 # NOTE: The Format5 channel name for barometric pressure is assumed to be 'baro_ch'.
 # Verify this against the f5channelDB.chdb for the Chilbolton site before processing.
 PRESSURE_CHANNEL = "baro_ch"
+
+
+def _download_amf_cvs(amf_cvs_root):
+    """Download AMF_CVs and instrument vocab TSV files from GitHub for offline use."""
+    import requests as _requests
+    print("[INFO] Downloading AMF_CVs files from GitHub for offline use...")
+
+    amf_tag = nant.values.get_latest_CVs_version()
+    inst_tag = nant.values.get_latest_instrument_CVs_version()
+
+    tsv_dir = amf_cvs_root / amf_tag / "product-definitions" / "tsv"
+    amf_base = f"https://raw.githubusercontent.com/ncasuk/AMF_CVs/{amf_tag}/product-definitions/tsv"
+    inst_base = f"https://raw.githubusercontent.com/ncasuk/ncas-data-instrument-vocabs/{inst_tag}/product-definitions/tsv"
+
+    files = [
+        (amf_base, "_common/global-attributes.tsv"),
+        (amf_base, "_common/variables-land.tsv"),
+        (amf_base, "_common/dimensions-land.tsv"),
+        (amf_base, "_vocabularies/data-products.tsv"),
+        (amf_base, "_vocabularies/file-naming.tsv"),
+        (amf_base, "_vocabularies/creators.tsv"),
+        (amf_base, "surface-met/variables-specific.tsv"),
+        (amf_base, "surface-met/dimensions-specific.tsv"),
+        (inst_base, "_instrument_vocabs/ncas-instrument-name-and-descriptors.tsv"),
+        (inst_base, "_instrument_vocabs/community-instrument-name-and-descriptors.tsv"),
+    ]
+
+    for base_url, rel_path in files:
+        dest = tsv_dir / rel_path
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        url = f"{base_url}/{rel_path}"
+        resp = _requests.get(url, timeout=30)
+        resp.raise_for_status()
+        dest.write_text(resp.text)
+        print(f"[INFO]   Downloaded {rel_path}")
+
+    versions_file = amf_cvs_root / "versions.txt"
+    versions_file.write_text(f"amf_cvs_tag={amf_tag}\ninstrument_cvs_tag={inst_tag}\n")
+    print(f"[INFO] AMF_CVs downloaded (AMF: {amf_tag}, instruments: {inst_tag})")
+
+
+@contextmanager
+def _nant_local_files():
+    """Context manager that patches nant's _check_website_exists so it can load
+    TSV files from the local amf_cvs/ directory without needing internet access.
+    If the local files are absent, downloads them from GitHub first.
+    Yields (use_local_files, tag) for passing to make_product_netcdf."""
+    _amf_cvs_root = Path(__file__).parent / "amf_cvs"
+    _versions_file = _amf_cvs_root / "versions.txt"
+
+    if not _versions_file.exists():
+        print("[INFO] amf_cvs/versions.txt not found - downloading from GitHub...")
+        try:
+            _download_amf_cvs(_amf_cvs_root)
+        except Exception as _e:
+            print(f"[WARNING] Failed to download AMF_CVs ({_e}) - falling back to live GitHub lookup.")
+            yield None, "latest"
+            return
+
+    _versions = dict(
+        line.split("=", 1)
+        for line in _versions_file.read_text().splitlines()
+        if "=" in line
+    )
+    _tag = _versions.get("amf_cvs_tag", "latest")
+    _use_local = str(_amf_cvs_root)
+
+    # nant calls requests.get() on local file paths, which fails.
+    # Patch _check_website_exists to use os.path.isfile for non-HTTP paths.
+    from ncas_amof_netcdf_template.file_info import FileInfo
+    _orig = FileInfo._check_website_exists
+
+    def _patched(self, url):
+        if not url.startswith("http"):
+            return os.path.isfile(url)
+        return _orig(self, url)
+
+    FileInfo._check_website_exists = _patched
+    try:
+        yield _use_local, _tag
+    finally:
+        FileInfo._check_website_exists = _orig
 
 
 def preprocess_data_f5(infile):
@@ -114,10 +198,13 @@ def process_file(infile, outdir="./", metadata_file="metadata_f5.json"):
     product_version = metadata.get('product_version', 'v1.0').lstrip('v')
 
     # Create NetCDF file
-    nc = nant.create_netcdf.make_product_netcdf("surface-met", "ncas-pressure-1", date=file_date,
-                                 dimension_lengths={"time": len(unix_times)},
-                                 file_location=outdir, platform="cao",
-                                 product_version=product_version)
+    with _nant_local_files() as (_use_local, _tag):
+        nc = nant.create_netcdf.make_product_netcdf("surface-met", "ncas-pressure-1", date=file_date,
+                                     dimension_lengths={"time": len(unix_times)},
+                                     file_location=outdir, platform="cao",
+                                     product_version=product_version,
+                                     use_local_files=_use_local,
+                                     tag=_tag)
     if isinstance(nc, list):
         print("[WARNING] Unexpectedly got multiple netCDFs returned from nant.create_netcdf.main, just using first file...")
         nc = nc[0]

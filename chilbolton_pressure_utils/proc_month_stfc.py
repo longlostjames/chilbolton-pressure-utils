@@ -53,7 +53,7 @@ def main():
         date_str = current_date.strftime("%Y%m%d")
 
         # Create output directory
-        outdir = Path(args.output_base) / str(args.year) / year_month
+        outdir = Path(args.output_base) / str(args.year)
         outdir.mkdir(parents=True, exist_ok=True)
 
         # Construct input file path

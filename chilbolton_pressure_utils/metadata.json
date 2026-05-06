@@ -11,7 +11,7 @@
     "processing_software_url": "https://github.com/longlostjames/chilbolton-pressure-utils",
     "processing_software_version": "__VERSION__",
     "calibration_sensitivity": "Calibrated to manufacturers standard: Pressure (500-1100hPa)",
-    "calibration_certification_date": "2019-02-04",
+    "calibration_certification_date": "2019-02-04T00:00:00",
     "calibration_certification_url": "https://github.com/ncasuk/ncas-pressure-1-additionaldata",
     "sampling_interval": "10.0 second",
     "averaging_interval": "10.0 second",
