@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chilbolton-pressure-utils"
-version = "1.0.0"
+version = "1.1.0"
 description = "Processing utilities for Chilbolton barometric pressure sensor data"
 readme = "README.md"
 authors = [{name = "Chris Walden"}]
@@ -54,6 +54,7 @@ split-cr1000x-data-daily = "chilbolton_pressure_utils.split_cr1000x_data_daily:m
 make-ptb110-quicklooks = "chilbolton_pressure_utils.make_quicklooks:main"
 extract-ptb110-bad-data-indices = "chilbolton_pressure_utils.extract_bad_data_indices:main"
 apply-ptb110-bad-data-indices = "chilbolton_pressure_utils.apply_bad_data_indices:main"
+apply-ptb110-corr-files = "chilbolton_pressure_utils.apply_corr_files:main"
 
 [tool.setuptools]
 packages = ["chilbolton_pressure_utils"]

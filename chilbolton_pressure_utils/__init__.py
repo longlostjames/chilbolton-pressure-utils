@@ -7,7 +7,7 @@ Provides tools to convert raw Campbell Scientific CR1000X datalogger files
 and legacy Format5 binary files containing Vaisala PTB110 pressure data into
 CF-compliant NetCDF files, with quality control flagging and quicklook plots.
 """
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "Chris Walden"
 
 from .process_ptb110 import main as process_ptb110_main
