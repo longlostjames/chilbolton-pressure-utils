@@ -37,7 +37,8 @@ process-ptb110 CR1000XSeries_Chilbolton_Rxcabinmet1_20240115.dat \
 ```bash
 process-ptb110-year -y 2024 \
     --raw-data-base /path/to/raw/data \
-    --output-base /path/to/output
+    --output-base /path/to/output \
+    --corrections-base /path/to/corrections
 ```
 
 ### Process legacy Format5 data
@@ -65,6 +66,33 @@ extract-ptb110-bad-data-indices -i /path/to/netcdf/ -o bad_data_indices_2024.csv
 apply-ptb110-bad-data-indices -c bad_data_indices_2024.csv -i /path/to/netcdf/ -y 2024
 ```
 
+### Apply daily .corr files to existing NetCDF files
+
+```bash
+apply-ptb110-corr-files -i /path/to/netcdf/ -c /path/to/corrections -y 2024
+```
+
+Correction files should be stored as:
+
+```text
+corrections/
+    2024/
+        20240115.corr
+        20240116.corr
+```
+
+Each `.corr` file supports one interval per line in this format:
+
+```text
+start_idx,end_idx
+start_idx,end_idx,flag
+```
+
+- Blank lines are ignored.
+- Anything after `#` on a line is treated as a comment.
+- If `flag` is omitted, `2` is used.
+- Processing starts with QC = `0` before `.corr` application; when a `.corr` file is present, all remaining `0` values are promoted to `1` (good data), and only explicitly flagged ranges remain non-good.
+
 ## Data Paths (JASMIN)
 
 Default data paths assume the NCAS GWS on JASMIN:
@@ -80,12 +108,12 @@ Default data paths assume the NCAS GWS on JASMIN:
 Files are named following the NCAS convention:
 
 ```
-ncas-pressure-1_cao_{YYYYMMDD}_surface-met_v1.0.nc
+ncas-pressure-1_cao_{YYYYMMDD}_surface-met_v1.1.nc
 ```
 
 Key variables:
 - `air_pressure` — barometric pressure (hPa)
-- `qc_flag_air_pressure` — QC flag (1 = good, 2 = bad data)
+- `qc_flag_air_pressure` — QC flag (`0` = not used, `1` = good data, `2` = bad data)
 
 ## Notes on Format5 Channel
 

@@ -7,6 +7,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 from .process_ptb110 import process_file
+from .qc_corrections import build_daily_correction_path
 
 
 def main():
@@ -25,6 +26,8 @@ NetCDF files."""
     parser.add_argument("--output-base", type=str,
                         default="/gws/pw/j07/ncas_obs_vol2/cao/processing/ncas-pressure-1/data/long-term/level1a",
                         help="Base directory for output NetCDF files")
+    parser.add_argument("--corrections-base", type=str, default=None,
+                        help="Optional base directory containing daily corrections/YYYY/YYYYMMDD.corr files")
 
     args = parser.parse_args()
 
@@ -60,7 +63,12 @@ NetCDF files."""
 
         # Generate NetCDF file
         try:
-            process_file(str(infile), str(outdir), str(metadata_file))
+            corr_file = None
+            if args.corrections_base:
+                candidate = build_daily_correction_path(args.corrections_base, current_date)
+                if candidate.exists():
+                    corr_file = str(candidate)
+            process_file(str(infile), str(outdir), str(metadata_file), corr_file=corr_file)
         except Exception as e:
             print(f"Error processing {infile}: {e}", file=sys.stderr)
 

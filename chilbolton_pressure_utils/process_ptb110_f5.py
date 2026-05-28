@@ -17,6 +17,7 @@ import os
 from .read_format5_content import read_format5_content
 from .read_format5_header import read_format5_header
 from .read_format5_chdb import read_format5_chdb
+from .qc_corrections import load_qc_from_corr_file, apply_qc_to_netcdf
 
 try:
     from . import __version__
@@ -157,7 +158,7 @@ def preprocess_data_f5(infile):
     return df
 
 
-def process_file(infile, outdir="./", metadata_file="metadata_f5.json"):
+def process_file(infile, outdir="./", metadata_file="metadata_f5.json", corr_file=None):
     df = preprocess_data_f5(infile)
     print(df)
 
@@ -195,7 +196,7 @@ def process_file(infile, outdir="./", metadata_file="metadata_f5.json"):
     import json
     with open(metadata_file, 'r') as f:
         metadata = json.load(f)
-    product_version = metadata.get('product_version', 'v1.0').lstrip('v')
+    product_version = metadata.get('product_version', 'v1.1').lstrip('v')
 
     # Create NetCDF file
     with _nant_local_files() as (_use_local, _tag):
@@ -235,6 +236,14 @@ def process_file(infile, outdir="./", metadata_file="metadata_f5.json"):
 
     # Add pressure data to NetCDF file
     nant.util.update_variable(nc, "air_pressure", df["BP_mbar_Avg"])
+
+    # Initialize QC to 0 and apply optional corrections from daily .corr file.
+    if corr_file and not Path(corr_file).exists():
+        print(f"[WARNING] Correction file not found: {corr_file} (using default QC=0)")
+    elif corr_file:
+        print(f"[INFO] Applying QC corrections from {corr_file}")
+    qc_values = load_qc_from_corr_file(len(unix_times), corr_file=corr_file, default_flag=0, bad_flag=2)
+    apply_qc_to_netcdf(nc, qc_values, variable_name="qc_flag_air_pressure")
 
     # Add time_coverage_start and time_coverage_end metadata
     nc.setncattr(
@@ -287,8 +296,9 @@ if __name__ == "__main__":
     parser.add_argument("infile", type=str, help="Input Format5 file")
     parser.add_argument("-o", "--outdir", type=str, default="./", help="Output directory")
     parser.add_argument("-m", "--metadata_file", type=str, default="metadata_f5.json", help="Metadata file")
+    parser.add_argument("--corr-file", type=str, default=None, help="Optional daily .corr file to apply QC flags")
     args = parser.parse_args()
-    process_file(args.infile, outdir=args.outdir, metadata_file=args.metadata_file)
+    process_file(args.infile, outdir=args.outdir, metadata_file=args.metadata_file, corr_file=args.corr_file)
 
 
 def main():
@@ -298,5 +308,6 @@ def main():
     parser.add_argument("infile", type=str, help="Input Format5 file")
     parser.add_argument("-o", "--outdir", type=str, default="./", help="Output directory")
     parser.add_argument("-m", "--metadata_file", type=str, default="metadata_f5.json", help="Metadata file")
+    parser.add_argument("--corr-file", type=str, default=None, help="Optional daily .corr file to apply QC flags")
     args = parser.parse_args()
-    process_file(args.infile, outdir=args.outdir, metadata_file=args.metadata_file)
+    process_file(args.infile, outdir=args.outdir, metadata_file=args.metadata_file, corr_file=args.corr_file)
