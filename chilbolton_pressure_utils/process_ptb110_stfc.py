@@ -13,6 +13,7 @@ import cftime
 import re
 import os
 from datetime import datetime, timezone
+import xarray as xr
 
 from .qc_corrections import load_qc_from_corr_file, apply_qc_to_netcdf
 
@@ -23,6 +24,117 @@ except ImportError:
 
 DATE_REGEX = r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{6}"
 d = re.compile(DATE_REGEX)
+
+
+def _has_non_missing_data(var):
+    """Return True if a variable contains at least one non-missing value."""
+    values = var.values
+
+    if np.ma.isMaskedArray(values):
+        if values.count() > 0:
+            return True
+        values = values.filled(np.nan)
+
+    arr = np.asarray(values)
+    if arr.size == 0:
+        return False
+
+    invalid = np.zeros(arr.shape, dtype=bool)
+
+    for attr_name in ("_FillValue", "missing_value"):
+        candidate = None
+        if attr_name in var.encoding:
+            candidate = var.encoding.get(attr_name)
+        elif attr_name in var.attrs:
+            candidate = var.attrs.get(attr_name)
+        if candidate is None:
+            continue
+
+        try:
+            invalid |= arr == candidate
+        except Exception:
+            pass
+
+    if np.issubdtype(arr.dtype, np.floating):
+        invalid |= np.isnan(arr)
+    elif arr.dtype.kind in {"U", "S", "O"}:
+        invalid |= arr == ""
+
+    return bool(np.any(~invalid))
+
+
+def _fallback_remove_unused_variables(file_name):
+    """Drop empty non-core variables without relying on remote CV lookups."""
+    core_keep = {
+        "time",
+        "day_of_year",
+        "year",
+        "month",
+        "day",
+        "hour",
+        "minute",
+        "second",
+        "air_pressure",
+        "qc_flag_air_pressure",
+        "latitude",
+        "longitude",
+    }
+
+    with xr.open_dataset(file_name) as ds:
+        to_drop = []
+        for var_name in ds.data_vars:
+            if var_name in core_keep or var_name in ds.coords:
+                continue
+            if _has_non_missing_data(ds[var_name]):
+                continue
+            to_drop.append(var_name)
+
+        if not to_drop:
+            print("[INFO] Fallback cleanup: no empty variables to remove.")
+            return
+
+        cleaned = ds.drop_vars(to_drop)
+        tmp_file = f"{file_name}.clean.tmp"
+        cleaned.to_netcdf(tmp_file)
+
+    os.replace(tmp_file, file_name)
+    print(f"[INFO] Fallback cleanup removed {len(to_drop)} empty variable(s): {', '.join(sorted(to_drop))}")
+
+
+def _remove_non_pressure_qc_flags(file_name):
+    """Remove all qc_flag_* variables except qc_flag_air_pressure."""
+    with xr.open_dataset(file_name) as ds:
+        qc_to_drop = [
+            name for name in ds.data_vars
+            if name.startswith("qc_flag_") and name != "qc_flag_air_pressure"
+        ]
+
+        if not qc_to_drop:
+            return
+
+        cleaned = ds.drop_vars(qc_to_drop)
+        tmp_file = f"{file_name}.qconly.tmp"
+        cleaned.to_netcdf(tmp_file)
+
+    os.replace(tmp_file, file_name)
+    print(f"[INFO] Removed non-pressure QC flag variable(s): {', '.join(sorted(qc_to_drop))}")
+
+
+def _rename_output_to_stfc_prefix(file_name):
+    """Rename output file to use stfc- prefix when template creates ncas- prefix."""
+    src = Path(file_name)
+    if not src.exists():
+        return str(src)
+
+    if src.name.startswith("stfc-"):
+        return str(src)
+    if not src.name.startswith("ncas-"):
+        return str(src)
+
+    dst = src.with_name(src.name.replace("ncas-", "stfc-", 1))
+    src.rename(dst)
+    print(f"[INFO] Renamed output file to STFC prefix: {dst.name}")
+    return str(dst)
 
 
 def _download_amf_cvs(amf_cvs_root):
@@ -229,9 +341,11 @@ def process_file(infile, outdir="./", metadata_file="metadata_stfc.json", corr_f
         metadata = json.load(f)
     product_version = metadata.get('product_version', 'v1.1').lstrip('v')
 
-    # Create NetCDF file (STFC instrument variant)
+    # Create NetCDF file using the instrument id present in AMF_CVs.
+    # The STFC variant is represented via metadata/institution, not a separate
+    # instrument id in the current CV tables.
     with _nant_local_files() as (_use_local, _tag):
-        nc = nant.create_netcdf.make_product_netcdf("surface-met", "stfc-pressure-1", date=file_date,
+        nc = nant.create_netcdf.make_product_netcdf("surface-met", "ncas-pressure-1", date=file_date,
                                      dimension_lengths={"time": len(unix_times)},
                                      file_location=outdir, platform="cao",
                                      product_version=product_version,
@@ -283,7 +397,14 @@ def process_file(infile, outdir="./", metadata_file="metadata_stfc.json", corr_f
         print(f"[WARNING] Correction file not found: {corr_file} (using default QC=0)")
     elif corr_file:
         print(f"[INFO] Applying QC corrections from {corr_file}")
-    qc_values = load_qc_from_corr_file(len(unix_times), corr_file=corr_file, default_flag=0, bad_flag=2)
+    qc_target_date = datetime(int(years[0]), int(months[0]), int(days[0]))
+    qc_values = load_qc_from_corr_file(
+        len(unix_times),
+        corr_file=corr_file,
+        target_date=qc_target_date,
+        default_flag=0,
+        bad_flag=2,
+    )
     apply_qc_to_netcdf(nc, qc_values, variable_name="qc_flag_air_pressure")
 
     # Add time_coverage_start and time_coverage_end metadata
@@ -298,6 +419,12 @@ def process_file(infile, outdir="./", metadata_file="metadata_stfc.json", corr_f
 
     # Add metadata from file
     nant.util.add_metadata_to_netcdf(nc, metadata_file)
+
+    # Ensure coordinate variables are populated from metadata when present.
+    if "latitude" in nc.variables and "latitude" in metadata:
+        nc.variables["latitude"][:] = np.asarray([metadata["latitude"]], dtype=np.float32)
+    if "longitude" in nc.variables and "longitude" in metadata:
+        nc.variables["longitude"][:] = np.asarray([metadata["longitude"]], dtype=np.float32)
 
     # Set processing software version from package
     version_str = __version__ if __version__.startswith('v') else f"v{__version__}"
@@ -334,6 +461,17 @@ def process_file(infile, outdir="./", metadata_file="metadata_stfc.json", corr_f
         nant.remove_empty_variables.main(file_name)
     except Exception as e:
         print(f"[WARNING] remove_empty_variables failed (GitHub lookup may be unavailable): {e}")
+        try:
+            _fallback_remove_unused_variables(file_name)
+        except Exception as fallback_exc:
+            print(f"[WARNING] fallback variable cleanup also failed: {fallback_exc}")
+
+    try:
+        _remove_non_pressure_qc_flags(file_name)
+    except Exception as qc_exc:
+        print(f"[WARNING] non-pressure QC flag cleanup failed: {qc_exc}")
+
+    _rename_output_to_stfc_prefix(file_name)
 
 
 def main():

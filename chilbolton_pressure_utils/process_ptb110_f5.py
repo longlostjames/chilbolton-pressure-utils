@@ -14,6 +14,7 @@ from datetime import timezone
 
 import re
 import os
+import xarray as xr
 from .read_format5_content import read_format5_content
 from .read_format5_header import read_format5_header
 from .read_format5_chdb import read_format5_chdb
@@ -27,6 +28,100 @@ except ImportError:
 # NOTE: The Format5 channel name for barometric pressure is assumed to be 'baro_ch'.
 # Verify this against the f5channelDB.chdb for the Chilbolton site before processing.
 PRESSURE_CHANNEL = "baro_ch"
+
+
+def _has_non_missing_data(var):
+    """Return True if a variable contains at least one non-missing value."""
+    values = var.values
+
+    if np.ma.isMaskedArray(values):
+        if values.count() > 0:
+            return True
+        values = values.filled(np.nan)
+
+    arr = np.asarray(values)
+    if arr.size == 0:
+        return False
+
+    invalid = np.zeros(arr.shape, dtype=bool)
+
+    for attr_name in ("_FillValue", "missing_value"):
+        candidate = None
+        if attr_name in var.encoding:
+            candidate = var.encoding.get(attr_name)
+        elif attr_name in var.attrs:
+            candidate = var.attrs.get(attr_name)
+        if candidate is None:
+            continue
+
+        try:
+            invalid |= arr == candidate
+        except Exception:
+            pass
+
+    if np.issubdtype(arr.dtype, np.floating):
+        invalid |= np.isnan(arr)
+    elif arr.dtype.kind in {"U", "S", "O"}:
+        invalid |= arr == ""
+
+    return bool(np.any(~invalid))
+
+
+def _fallback_remove_unused_variables(file_name):
+    """Drop empty non-core variables without relying on remote CV lookups."""
+    core_keep = {
+        "time",
+        "day_of_year",
+        "year",
+        "month",
+        "day",
+        "hour",
+        "minute",
+        "second",
+        "air_pressure",
+        "qc_flag_air_pressure",
+        "latitude",
+        "longitude",
+    }
+
+    with xr.open_dataset(file_name) as ds:
+        to_drop = []
+        for var_name in ds.data_vars:
+            if var_name in core_keep or var_name in ds.coords:
+                continue
+            if _has_non_missing_data(ds[var_name]):
+                continue
+            to_drop.append(var_name)
+
+        if not to_drop:
+            print("[INFO] Fallback cleanup: no empty variables to remove.")
+            return
+
+        cleaned = ds.drop_vars(to_drop)
+        tmp_file = f"{file_name}.clean.tmp"
+        cleaned.to_netcdf(tmp_file)
+
+    os.replace(tmp_file, file_name)
+    print(f"[INFO] Fallback cleanup removed {len(to_drop)} empty variable(s): {', '.join(sorted(to_drop))}")
+
+
+def _remove_non_pressure_qc_flags(file_name):
+    """Remove all qc_flag_* variables except qc_flag_air_pressure."""
+    with xr.open_dataset(file_name) as ds:
+        qc_to_drop = [
+            name for name in ds.data_vars
+            if name.startswith("qc_flag_") and name != "qc_flag_air_pressure"
+        ]
+
+        if not qc_to_drop:
+            return
+
+        cleaned = ds.drop_vars(qc_to_drop)
+        tmp_file = f"{file_name}.qconly.tmp"
+        cleaned.to_netcdf(tmp_file)
+
+    os.replace(tmp_file, file_name)
+    print(f"[INFO] Removed non-pressure QC flag variable(s): {', '.join(sorted(qc_to_drop))}")
 
 
 def _download_amf_cvs(amf_cvs_root):
@@ -242,7 +337,14 @@ def process_file(infile, outdir="./", metadata_file="metadata_f5.json", corr_fil
         print(f"[WARNING] Correction file not found: {corr_file} (using default QC=0)")
     elif corr_file:
         print(f"[INFO] Applying QC corrections from {corr_file}")
-    qc_values = load_qc_from_corr_file(len(unix_times), corr_file=corr_file, default_flag=0, bad_flag=2)
+    qc_target_date = datetime(int(years[0]), int(months[0]), int(days[0]))
+    qc_values = load_qc_from_corr_file(
+        len(unix_times),
+        corr_file=corr_file,
+        target_date=qc_target_date,
+        default_flag=0,
+        bad_flag=2,
+    )
     apply_qc_to_netcdf(nc, qc_values, variable_name="qc_flag_air_pressure")
 
     # Add time_coverage_start and time_coverage_end metadata
@@ -287,7 +389,19 @@ def process_file(infile, outdir="./", metadata_file="metadata_f5.json", corr_fil
     # Close file, remove empty variables
     file_name = nc.filepath()
     nc.close()
-    nant.remove_empty_variables.main(file_name)
+    try:
+        nant.remove_empty_variables.main(file_name)
+    except Exception as e:
+        print(f"[WARNING] remove_empty_variables failed (GitHub lookup may be unavailable): {e}")
+        try:
+            _fallback_remove_unused_variables(file_name)
+        except Exception as fallback_exc:
+            print(f"[WARNING] fallback variable cleanup also failed: {fallback_exc}")
+
+    try:
+        _remove_non_pressure_qc_flags(file_name)
+    except Exception as qc_exc:
+        print(f"[WARNING] non-pressure QC flag cleanup failed: {qc_exc}")
 
 
 if __name__ == "__main__":

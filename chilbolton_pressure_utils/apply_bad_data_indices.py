@@ -79,8 +79,16 @@ def apply_bad_data_indices_to_file(nc_file, bad_data_indices_row):
 
         ds.attrs['last_modified'] = timestamp
 
+        qc_to_drop = [
+            name for name in ds.data_vars
+            if name.startswith('qc_flag_') and name != 'qc_flag_air_pressure'
+        ]
+        ds_to_write = ds.drop_vars(qc_to_drop) if qc_to_drop else ds
+        if qc_to_drop:
+            print(f"[INFO] Removed non-pressure QC flag variable(s): {', '.join(sorted(qc_to_drop))}")
+
         temp_filename = str(nc_file) + '.tmp'
-        ds.to_netcdf(temp_filename)
+        ds_to_write.to_netcdf(temp_filename)
 
     shutil.move(temp_filename, nc_file)
     set_time_units_to_seconds_since_epoch(nc_file)
