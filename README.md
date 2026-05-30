@@ -66,22 +66,53 @@ extract-ptb110-bad-data-indices -i /path/to/netcdf/ -o bad_data_indices_2024.csv
 apply-ptb110-bad-data-indices -c bad_data_indices_2024.csv -i /path/to/netcdf/ -y 2024
 ```
 
-### Apply daily .corr files to existing NetCDF files
+### Apply .corr files to existing NetCDF files
 
 ```bash
 apply-ptb110-corr-files -i /path/to/netcdf/ -c /path/to/corrections -y 2024
 ```
 
-Correction files should be stored as:
+### Web-based QC editor
+
+Install web UI dependencies:
+
+```bash
+pip install "chilbolton-pressure-utils[qcweb]"
+```
+
+Launch the browser-based QC tool:
+
+```bash
+ptb110-qc-web --port 8501
+```
+
+The app lets you:
+
+- Load NetCDF data across a selected start/end date range.
+- Edit QC intervals as `start_idx,end_idx,flag` rows in a browser text area (global indices across the loaded range).
+- Preview shaded flagged regions over the pressure series with Plotly.
+- Save monthly multi-day correction files to `corrections/YYYY/YYYYMM.corr`.
+- Use a `Flag all as good` action to quickly mark all loaded samples as good.
+
+The web QC tool is built with Flask and Plotly, not Streamlit.
+
+Correction files are stored under year folders, with monthly files as the canonical format:
 
 ```text
 corrections/
     2024/
-        20240115.corr
-        20240116.corr
+    202401.corr
+    202402.corr
 ```
 
-Each `.corr` file supports one interval per line in this format:
+Monthly files support one interval per line in this format:
+
+```text
+YYYYMMDD,start_idx,end_idx
+YYYYMMDD,start_idx,end_idx,flag
+```
+
+Legacy daily files are also supported for compatibility:
 
 ```text
 start_idx,end_idx

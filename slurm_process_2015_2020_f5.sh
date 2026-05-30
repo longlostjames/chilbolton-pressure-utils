@@ -14,7 +14,7 @@ YEAR=${SLURM_ARRAY_TASK_ID}
 source activate cao_3_11
 
 RAW_DATA_BASE=/gws/pw/j07/ncas_obs_vol2/cao/raw_data/legacy/cao-analog-format5_chilbolton/data/long-term/format5
-OUTPUT_BASE=/gws/pw/j07/ncas_obs_vol2/cao/processing/ncas-pressure-1/data/long-term/level1_f5
+OUTPUT_BASE=/gws/pw/j07/ncas_obs_vol2/cao/processing/ncas-pressure-1/data/long-term/level1c_f5
 
 echo "Processing year ${YEAR} (Format5)"
 process-ptb110-year-f5 -y ${YEAR} \

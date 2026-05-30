@@ -33,6 +33,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "black>=23.0", "flake8>=6.0", "mypy>=1.0"]
 docs = ["sphinx>=4.0", "sphinx_rtd_theme>=1.0"]
+qcweb = ["flask>=3.0.0", "plotly>=5.20.0"]
 
 [project.urls]
 Homepage = "https://github.com/longlostjames/chilbolton-pressure-utils"
@@ -55,6 +56,7 @@ make-ptb110-quicklooks = "chilbolton_pressure_utils.make_quicklooks:main"
 extract-ptb110-bad-data-indices = "chilbolton_pressure_utils.extract_bad_data_indices:main"
 apply-ptb110-bad-data-indices = "chilbolton_pressure_utils.apply_bad_data_indices:main"
 apply-ptb110-corr-files = "chilbolton_pressure_utils.apply_corr_files:main"
+ptb110-qc-web = "chilbolton_pressure_utils.qc_flask_tool:main"
 
 [tool.setuptools]
 packages = ["chilbolton_pressure_utils"]

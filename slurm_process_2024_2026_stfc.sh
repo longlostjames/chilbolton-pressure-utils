@@ -20,7 +20,7 @@ echo "chilbolton-pressure-utils version: $(python -c 'import chilbolton_pressure
 echo "Working directory: $(pwd)"
 
 RAW_DATA_BASE=/gws/pw/j07/ncas_obs_vol2/cao/raw_data/met_cao/data/long-term/new_daily_split
-OUTPUT_BASE=/gws/pw/j07/ncas_obs_vol2/cao/processing/ncas-pressure-1/data/long-term/level1a
+OUTPUT_BASE=/gws/pw/j07/ncas_obs_vol2/cao/processing/ncas-pressure-1/data/long-term/level1c_stfc
 
 echo "Processing year ${YEAR} (CR1000X STFC)"
 process-ptb110-year-stfc -y ${YEAR} \
