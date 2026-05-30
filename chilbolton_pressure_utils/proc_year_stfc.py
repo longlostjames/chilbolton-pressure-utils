@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 from .process_ptb110_stfc import process_file
-from .qc_corrections import build_daily_correction_path
+from .qc_corrections import find_correction_file_for_date
 
 
 def main():
@@ -24,7 +24,7 @@ CF-compliant NetCDF files."""
                         default="/gws/pw/j07/ncas_obs_vol2/cao/raw_data/met_cao/data/long-term",
                         help="Base directory for raw data")
     parser.add_argument("--output-base", type=str,
-                        default="/gws/pw/j07/ncas_obs_vol2/cao/processing/ncas-pressure-1/data/long-term/level1",
+                        default="/gws/pw/j07/ncas_obs_vol2/cao/processing/stfc-pressure-1/data/long-term/level1",
                         help="Base directory for output NetCDF files")
     parser.add_argument("--corrections-base", type=str, default=None,
                         help="Optional base directory containing daily corrections/YYYY/YYYYMMDD.corr files")
@@ -65,8 +65,8 @@ CF-compliant NetCDF files."""
         try:
             corr_file = None
             if args.corrections_base:
-                candidate = build_daily_correction_path(args.corrections_base, current_date)
-                if candidate.exists():
+                candidate = find_correction_file_for_date(args.corrections_base, current_date)
+                if candidate:
                     corr_file = str(candidate)
             process_file(str(infile), str(outdir), str(metadata_file), corr_file=corr_file)
         except Exception as e:

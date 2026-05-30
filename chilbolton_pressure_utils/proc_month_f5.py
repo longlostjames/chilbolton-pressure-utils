@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 from .process_ptb110_f5 import process_file
-from .qc_corrections import build_daily_correction_path
+from .qc_corrections import find_correction_file_for_date
 
 
 def main():
@@ -72,8 +72,8 @@ def main():
         try:
             corr_file = None
             if args.corrections_base:
-                candidate = build_daily_correction_path(args.corrections_base, current_date)
-                if candidate.exists():
+                candidate = find_correction_file_for_date(args.corrections_base, current_date)
+                if candidate:
                     corr_file = str(candidate)
             process_file(str(infile), str(outdir), str(metadata_file), corr_file=corr_file)
         except Exception as e:
