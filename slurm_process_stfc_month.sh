@@ -23,8 +23,8 @@ echo "Python version: $(python --version)"
 echo "chilbolton-pressure-utils version: $(python -c 'import chilbolton_pressure_utils; print(chilbolton_pressure_utils.__version__)')"
 echo "Working directory: $(pwd)"
 
-RAW_DATA_BASE=/gws/pw/j07/ncas_obs_vol2/cao/raw_data/met_cao/data/long-term/new_daily_split
-OUTPUT_BASE=/gws/pw/j07/ncas_obs_vol2/cao/processing/ncas-pressure-1/data/long-term/level1c_stfc
+RAW_DATA_BASE=/gws/ssde/j25a/chil_atmos/raw_data/cao-surface-met/data/long-term/new_daily_split
+OUTPUT_BASE=/gws/ssde/j25a/chil_atmos/processing/stfc-pressure-1/data/20240401_longterm
 
 echo "Processing ${YEAR}-$(printf '%02d' ${MONTH}) (CR1000X STFC)"
 process-ptb110-month-stfc -y ${YEAR} -m ${MONTH} \
