@@ -176,8 +176,33 @@ def main():
         default=None,
         help="Optional year filter. Looks in corrections-base/YYYY and input-dir/YYYY.",
     )
+    parser.add_argument(
+        "--start-date",
+        default=None,
+        help="Only process dates on or after this date (format: YYYYMMDD).",
+    )
+    parser.add_argument(
+        "--end-date",
+        default=None,
+        help="Only process dates on or before this date (format: YYYYMMDD).",
+    )
 
     args = parser.parse_args()
+
+    start_date = None
+    end_date = None
+    if args.start_date:
+        try:
+            start_date = datetime.strptime(args.start_date, "%Y%m%d")
+        except ValueError:
+            parser.error(f"--start-date must be in YYYYMMDD format, got: {args.start_date}")
+    if args.end_date:
+        try:
+            end_date = datetime.strptime(args.end_date, "%Y%m%d")
+        except ValueError:
+            parser.error(f"--end-date must be in YYYYMMDD format, got: {args.end_date}")
+    if start_date and end_date and start_date > end_date:
+        parser.error("--start-date must not be later than --end-date")
 
     processed = 0
     skipped = 0
@@ -196,6 +221,10 @@ def main():
             continue
 
         for corr_date in corr_dates:
+            if start_date and corr_date < start_date:
+                continue
+            if end_date and corr_date > end_date:
+                continue
             nc_file = find_nc_file_for_date(args.input_dir, corr_date, year=args.year)
             if nc_file is None:
                 print(f"No NetCDF file found for {corr_date.strftime('%Y-%m-%d')}, skipping")

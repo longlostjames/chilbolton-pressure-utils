@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import os
 import argparse
+from datetime import datetime
 
 try:
     from . import __version__
@@ -84,66 +85,128 @@ def plot_day(ds, nc_filename, outdir):
         plt.close(fig)
 
 
+def _extract_file_date(filename):
+    """Extract datetime from a NetCDF filename containing an 8-digit YYYYMMDD token."""
+    stem = os.path.splitext(os.path.basename(filename))[0]
+    for part in stem.split('_'):
+        if part.isdigit() and len(part) == 8:
+            try:
+                return datetime.strptime(part, "%Y%m%d")
+            except ValueError:
+                pass
+    return None
+
+
 def main():
     """CLI entry point for make-ptb110-quicklooks command."""
     parser = argparse.ArgumentParser(description="Generate daily QC flag plots for PTB110 pressure NetCDF files.")
     parser.add_argument(
         "-i", "--input_dir",
-        default="/gws/pw/j07/ncas_obs_vol2/cao/processing/ncas-pressure-1/data/long-term/level1a/",
+        default="/gws/ssde/j25a/chil_atmos/processing/stfc-pressure-1/data/20240401_longterm/",
         help="Base directory containing yearly subdirectories of NetCDF files"
     )
     parser.add_argument(
         "-o", "--output_dir",
-        default="/gws/pw/j07/ncas_obs_vol2/cao/processing/ncas-pressure-1/data/long-term/level1a/quicklooks/",
+        default="/gws/ssde/j25a/chil_atmos/processing/stfc-pressure-1/data/20240401_longterm/quicklooks/",
         help="Base directory to save yearly subdirectories of PNG plots"
     )
     parser.add_argument(
         "-y", "--year",
-        required=True,
-        help="Year to process (e.g., 2024)"
+        default=None,
+        help="Year to process (e.g., 2024). Required unless --start-date/--end-date are given."
     )
     parser.add_argument(
         "-d", "--day",
         help="Specific day to process (format: YYYYMMDD). If not provided, all days in the year will be processed."
     )
+    parser.add_argument(
+        "--start-date",
+        default=None,
+        help="Only process dates on or after this date (format: YYYYMMDD)."
+    )
+    parser.add_argument(
+        "--end-date",
+        default=None,
+        help="Only process dates on or before this date (format: YYYYMMDD)."
+    )
     args = parser.parse_args()
 
-    # Construct year-specific input and output directories
-    input_dir = os.path.join(args.input_dir, args.year)
-    output_dir = os.path.join(args.output_dir, args.year)
+    start_date = None
+    end_date = None
+    if args.start_date:
+        try:
+            start_date = datetime.strptime(args.start_date, "%Y%m%d")
+        except ValueError:
+            parser.error(f"--start-date must be in YYYYMMDD format, got: {args.start_date}")
+    if args.end_date:
+        try:
+            end_date = datetime.strptime(args.end_date, "%Y%m%d")
+        except ValueError:
+            parser.error(f"--end-date must be in YYYYMMDD format, got: {args.end_date}")
+    if start_date and end_date and start_date > end_date:
+        parser.error("--start-date must not be later than --end-date")
 
-    os.makedirs(output_dir, exist_ok=True)
+    # Determine which years to scan
+    if args.year:
+        years = [args.year]
+    elif start_date and end_date:
+        years = [str(y) for y in range(start_date.year, end_date.year + 1)]
+    elif start_date:
+        years = [str(start_date.year)]
+    elif end_date:
+        years = [str(end_date.year)]
+    else:
+        parser.error("Must specify --year or at least one of --start-date / --end-date.")
 
     from pathlib import Path
-    input_path = Path(input_dir)
 
-    if not input_path.exists():
-        print(f"Input directory does not exist: {input_dir}")
-        return
+    for year in years:
+        input_dir = os.path.join(args.input_dir, year)
+        output_dir = os.path.join(args.output_dir, year)
 
-    nc_files = sorted([f for f in input_path.rglob("*.nc")])
+        os.makedirs(output_dir, exist_ok=True)
 
-    if not nc_files:
-        print(f"No .nc files found in input directory: {input_dir}")
-        return
+        input_path = Path(input_dir)
+        if not input_path.exists():
+            print(f"Input directory does not exist: {input_dir}")
+            continue
 
-    if args.day:
-        nc_files = [f for f in nc_files if args.day in f.name]
+        nc_files = sorted(input_path.rglob("*.nc"))
+
         if not nc_files:
-            print(f"No .nc files found for the specified day: {args.day}")
-            return
+            print(f"No .nc files found in: {input_dir}")
+            continue
 
-    for nc_file in nc_files:
-        try:
-            ds = xr.open_dataset(nc_file, decode_times=False)
-            if 'time' not in ds:
-                print(f"Skipping {nc_file.name}: no 'time' variable")
+        if args.day:
+            nc_files = [f for f in nc_files if args.day in f.name]
+            if not nc_files:
+                print(f"No .nc files found for the specified day: {args.day}")
                 continue
-            ds = xr.decode_cf(ds)
-            ds = ds.sortby('time')
-            plot_day(ds, nc_file.name, output_dir)
-        except Exception as e:
-            print(f"Failed to process {nc_file.name}: {e}")
+        elif start_date or end_date:
+            filtered = []
+            for f in nc_files:
+                file_date = _extract_file_date(f.name)
+                if file_date is None:
+                    filtered.append(f)
+                    continue
+                if start_date and file_date < start_date:
+                    continue
+                if end_date and file_date > end_date:
+                    continue
+                filtered.append(f)
+            nc_files = filtered
+
+        for nc_file in nc_files:
+            try:
+                ds = xr.open_dataset(nc_file, decode_times=False)
+                if 'time' not in ds:
+                    print(f"Skipping {nc_file.name}: no 'time' variable")
+                    continue
+                ds = xr.decode_cf(ds)
+                ds = ds.sortby('time')
+                plot_day(ds, nc_file.name, output_dir)
+            except Exception as e:
+                print(f"Failed to process {nc_file.name}: {e}")
 
 
 if __name__ == "__main__":

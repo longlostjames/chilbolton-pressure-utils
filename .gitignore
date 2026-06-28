@@ -42,3 +42,6 @@ htmlcov/
 docs/_build/
 docs/_static/
 docs/_templates/
+
+# SLURM / job logs
+logs/

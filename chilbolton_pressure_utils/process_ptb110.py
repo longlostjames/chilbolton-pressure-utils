@@ -276,9 +276,14 @@ def preprocess_data(infile):
             else:
                 df = df.with_columns(pl.col(column).cast(dtype, strict=False))
 
-    # Step 10: Keep only the required columns and drop rows with null TIMESTAMP
+    # Step 10: Keep only the required columns, drop rows with null TIMESTAMP,
+    # and ensure data are strictly time-ordered for downstream plotting/encoding.
     # (embedded header rows that passed column-count check produce null timestamps)
-    df = df.select(["TIMESTAMP", "BP_mbar_Avg"]).filter(pl.col("TIMESTAMP").is_not_null())
+    df = (
+        df.select(["TIMESTAMP", "BP_mbar_Avg"])
+        .filter(pl.col("TIMESTAMP").is_not_null())
+        .sort("TIMESTAMP")
+    )
 
     # No scale factors needed: BP_mbar_Avg is already in hPa (mbar)
 
